@@ -1,0 +1,10 @@
+# Local configuration — contains your project ID and demo CIDRs
+config.env
+
+# Cluster credentials written by lib.sh / 01-gke.sh
+.kube-config
+gke_gcloud_auth_plugin_cache
+
+*.log
+__pycache__/
+*.pyc

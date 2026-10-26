@@ -1,0 +1,272 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 620" width="1280" height="620" role="img"
+     aria-label="Animated diagram: traffic from the internet reaches a global external Application Load Balancer where Cloud Armor enforces IP, geo and WAF rules, then crosses Private Service Connect to a regional internal load balancer enforcing rate limits, and finally reaches a GKE pod. Three cases cycle: a legitimate request succeeds, a SQL injection is blocked at the Google edge before entering any VPC, and a request flood is throttled at the application tier.">
+
+  <style>
+    /* Fonts: SVG loaded as an image cannot fetch webfonts, so stick to
+       generic families that exist everywhere. */
+    .t      { font-family: "DejaVu Sans", "Helvetica Neue", Arial, sans-serif; fill: #e6edf3; }
+    .m      { font-family: "DejaVu Sans Mono", "SF Mono", Consolas, monospace; fill: #e6edf3; }
+    .muted  { fill: #8b949e; }
+    .dim    { fill: #6e7681; }
+
+    .title    { font-size: 21px; font-weight: 700; }
+    .subtitle { font-size: 13px; }
+    .boxname  { font-size: 13px; font-weight: 700; letter-spacing: .6px; }
+    .boxsub   { font-size: 10.5px; }
+    .polname  { font-size: 11px; font-weight: 700; }
+    .rule     { font-size: 10.5px; }
+    .caption  { font-size: 16px; font-weight: 600; }
+    .capsub   { font-size: 12.5px; }
+    .tag      { font-size: 10px; font-weight: 700; letter-spacing: .5px; }
+    .badge    { font-size: 15px; font-weight: 700; }
+
+    .panel   { fill: #161b22; stroke: #30363d; stroke-width: 1.5; }
+    .vpc     { fill: none; stroke: #30363d; stroke-width: 1.5; stroke-dasharray: 7 6; }
+    .wire    { stroke: #30363d; stroke-width: 2; fill: none; }
+
+    /* ── One 12s loop, three 4s acts ───────────────────────────────────
+       act 1  0.00–33.3%   legitimate request, reaches the pod
+       act 2 33.3–66.7%    SQL injection, blocked at the edge
+       act 3 66.7–100%     request flood, throttled at the app tier      */
+    .anim { animation-duration: 12s; animation-iteration-count: infinite;
+            animation-timing-function: linear; }
+
+    /* Packets. Each starts at the client and translates right along y=330. */
+    @keyframes travel-ok {       /* all the way to the pod: 982px */
+      0%,1%    { transform: translateX(0px);   opacity: 0; }
+      3%       { transform: translateX(18px);  opacity: 1; }
+      23%      { transform: translateX(982px); opacity: 1; }
+      27%,100% { transform: translateX(982px); opacity: 0; }
+    }
+    @keyframes travel-blocked-edge {   /* stops inside the edge policy: 195px */
+      0%,33.3%  { transform: translateX(0px);   opacity: 0; }
+      35%       { transform: translateX(18px);  opacity: 1; }
+      43%       { transform: translateX(195px); opacity: 1; }
+      45%,100%  { transform: translateX(195px); opacity: 0; }
+    }
+    /* Three flood packets, staggered, all stopped at the internal ALB: 715px */
+    @keyframes flood-a {
+      0%,67%    { transform: translateX(0px);   opacity: 0; }
+      68%       { transform: translateX(18px);  opacity: 1; }
+      79%       { transform: translateX(715px); opacity: 1; }
+      81%,100%  { transform: translateX(715px); opacity: 0; }
+    }
+    @keyframes flood-b {
+      0%,70%    { transform: translateX(0px);   opacity: 0; }
+      71%       { transform: translateX(18px);  opacity: 1; }
+      82%       { transform: translateX(715px); opacity: 1; }
+      84%,100%  { transform: translateX(715px); opacity: 0; }
+    }
+    @keyframes flood-c {
+      0%,73%    { transform: translateX(0px);   opacity: 0; }
+      74%       { transform: translateX(18px);  opacity: 1; }
+      85%       { transform: translateX(715px); opacity: 1; }
+      87%,100%  { transform: translateX(715px); opacity: 0; }
+    }
+    .p-ok    { animation-name: travel-ok; }
+    .p-sqli  { animation-name: travel-blocked-edge; }
+    .p-f1    { animation-name: flood-a; }
+    .p-f2    { animation-name: flood-b; }
+    .p-f3    { animation-name: flood-c; }
+
+    /* Impact burst where a packet is stopped. */
+    @keyframes burst-edge {
+      0%,42%   { transform: scale(.3); opacity: 0; }
+      44%      { transform: scale(1);  opacity: .75; }
+      50%,100% { transform: scale(1.8); opacity: 0; }
+    }
+    @keyframes burst-ilb {
+      0%,79%   { transform: scale(.3); opacity: 0; }
+      81%      { transform: scale(1);  opacity: .75; }
+      88%,100% { transform: scale(1.8); opacity: 0; }
+    }
+    .b-edge { animation-name: burst-edge; transform-origin: 380px 330px; }
+    .b-ilb  { animation-name: burst-ilb;  transform-origin: 900px 330px; }
+
+    /* Status badges. */
+    @keyframes show-200 { 0%,22% {opacity:0} 24%,31% {opacity:1} 33%,100% {opacity:0} }
+    @keyframes show-403 { 0%,43% {opacity:0} 45%,62% {opacity:1} 64%,100% {opacity:0} }
+    @keyframes show-429 { 0%,80% {opacity:0} 82%,97% {opacity:1} 99%,100% {opacity:0} }
+    .s200 { animation-name: show-200; }
+    .s403 { animation-name: show-403; }
+    .s429 { animation-name: show-429; }
+
+    /* The rule row that matched, highlighted while it is doing the work. */
+    @keyframes hl-waf   { 0%,41% {opacity:0} 43%,62% {opacity:.24} 64%,100% {opacity:0} }
+    @keyframes hl-thr   { 0%,78% {opacity:0} 80%,97% {opacity:.24} 99%,100% {opacity:0} }
+    @keyframes hl-allow { 0% {opacity:0} 4%,27% {opacity:.20} 30%,100% {opacity:0} }
+    .h-waf   { animation-name: hl-waf; }
+    .h-thr   { animation-name: hl-thr; }
+    .h-allow { animation-name: hl-allow; }
+
+    /* Caption, one line per act. */
+    @keyframes cap1 { 0% {opacity:0} 2%,29% {opacity:1} 32%,100% {opacity:0} }
+    @keyframes cap2 { 0%,34% {opacity:0} 36%,62% {opacity:1} 65%,100% {opacity:0} }
+    @keyframes cap3 { 0%,67% {opacity:0} 69%,96% {opacity:1} 99%,100% {opacity:0} }
+    .c1 { animation-name: cap1; }
+    .c2 { animation-name: cap2; }
+    .c3 { animation-name: cap3; }
+
+    /* The client that is currently sending. */
+    @keyframes lit1 { 0% {opacity:.35} 3%,25% {opacity:1} 28%,100% {opacity:.35} }
+    @keyframes lit2 { 0%,34% {opacity:.35} 36%,45% {opacity:1} 48%,100% {opacity:.35} }
+    @keyframes lit3 { 0%,67% {opacity:.35} 69%,86% {opacity:1} 89%,100% {opacity:.35} }
+    .l1 { animation-name: lit1; }
+    .l2 { animation-name: lit2; }
+    .l3 { animation-name: lit3; }
+  </style>
+
+  <rect width="1280" height="620" fill="#0d1117"/>
+
+  <!-- ── Heading ──────────────────────────────────────────────────── -->
+  <text class="t title"    x="40" y="42">Cloud Armor · two enforcement tiers</text>
+  <text class="t subtitle muted" x="40" y="64">global external ALB  →  Private Service Connect  →  regional internal ALB  →  GKE</text>
+
+  <!-- ── VPC boundaries. The edge sits outside both, which is the point. -->
+  <rect class="vpc" x="545" y="236" width="196" height="188" rx="10"/>
+  <text class="m tag dim" x="553" y="256">armor-consumer-vpc</text>
+
+  <rect class="vpc" x="762" y="150" width="492" height="330" rx="10"/>
+  <text class="m tag dim" x="770" y="170">armor-producer-vpc</text>
+
+  <!-- ── Connecting wire, drawn behind the panels ─────────────────── -->
+  <path class="wire" d="M 180 330 H 1100"/>
+
+  <!-- ── Clients ──────────────────────────────────────────────────── -->
+  <rect class="panel" x="40" y="272" width="140" height="116" rx="8"/>
+  <text class="t boxname" x="56" y="294">CLIENTS</text>
+  <g class="anim l1">
+    <circle cx="62" cy="318" r="5" fill="#3fb950"/>
+    <text class="t boxsub" x="76" y="322">legitimate</text>
+  </g>
+  <g class="anim l2">
+    <circle cx="62" cy="344" r="5" fill="#f85149"/>
+    <text class="t boxsub" x="76" y="348">SQL injection</text>
+  </g>
+  <g class="anim l3">
+    <circle cx="62" cy="370" r="5" fill="#d29922"/>
+    <text class="t boxsub" x="76" y="374">request flood</text>
+  </g>
+
+  <!-- ── Google edge POP · policy 1 ───────────────────────────────── -->
+  <rect class="panel" x="255" y="178" width="250" height="284" rx="8"/>
+  <text class="t boxname"       x="271" y="202">GOOGLE EDGE POP</text>
+  <text class="t boxsub muted"  x="271" y="219">global external ALB · anycast</text>
+  <line x1="271" y1="230" x2="489" y2="230" stroke="#30363d" stroke-width="1"/>
+  <text class="m polname" x="271" y="250" fill="#58a6ff">armor-edge</text>
+  <text class="m rule dim" x="271" y="265">global policy · attached with gcloud</text>
+
+  <rect class="anim h-allow" x="265" y="394" width="230" height="22" rx="4" fill="#3fb950" opacity="0"/>
+  <rect class="anim h-waf"   x="265" y="334" width="230" height="22" rx="4" fill="#f85149" opacity="0"/>
+
+  <text class="m rule" x="275" y="289"><tspan class="dim">1000 </tspan>IP denylist / allowlist</text>
+  <text class="m rule" x="275" y="319"><tspan class="dim">1100 </tspan>geo · origin.region_code</text>
+  <text class="m rule" x="275" y="349"><tspan class="dim">2000 </tspan>WAF · sqli-v422-stable</text>
+  <text class="m rule" x="275" y="379"><tspan class="dim">2100 </tspan>WAF · xss-v422-stable</text>
+  <text class="m rule dim" x="275" y="409">default  allow</text>
+
+  <line x1="271" y1="424" x2="489" y2="424" stroke="#30363d" stroke-width="1"/>
+  <text class="t boxsub" x="271" y="444" fill="#3fb950">outside your VPCs —</text>
+  <text class="t boxsub" x="271" y="457" fill="#3fb950">blocked traffic never enters</text>
+
+  <!-- ── Private Service Connect ──────────────────────────────────── -->
+  <rect class="panel" x="575" y="292" width="136" height="76" rx="8"/>
+  <text class="t boxname" x="591" y="316">PSC</text>
+  <text class="t boxsub muted" x="591" y="333">service attachment</text>
+  <text class="t boxsub muted" x="591" y="348">+ NEG · SNAT</text>
+  <path class="wire" d="M 505 330 H 575" stroke="#58a6ff" stroke-dasharray="4 4"/>
+  <path class="wire" d="M 711 330 H 775" stroke="#58a6ff" stroke-dasharray="4 4"/>
+
+  <!-- ── Internal ALB · policy 2 ──────────────────────────────────── -->
+  <rect class="panel" x="775" y="178" width="250" height="284" rx="8"/>
+  <text class="t boxname"      x="791" y="202">INTERNAL ALB</text>
+  <text class="t boxsub muted" x="791" y="219">regional · built by GKE Gateway</text>
+  <line x1="791" y1="230" x2="1009" y2="230" stroke="#30363d" stroke-width="1"/>
+  <text class="m polname" x="791" y="250" fill="#bc8cff">armor-app</text>
+  <text class="m rule dim" x="791" y="265">regional · GCPBackendPolicy</text>
+
+  <rect class="anim h-thr" x="785" y="304" width="230" height="22" rx="4" fill="#d29922" opacity="0"/>
+
+  <text class="m rule" x="795" y="289"><tspan class="dim">3000 </tspan>rate-based ban · /login</text>
+  <text class="m rule" x="795" y="319"><tspan class="dim">3100 </tspan>throttle · 20 / 60s</text>
+  <text class="m rule dim" x="795" y="349">default  allow</text>
+
+  <line x1="791" y1="372" x2="1009" y2="372" stroke="#30363d" stroke-width="1"/>
+  <text class="t boxsub" x="791" y="392" fill="#f85149">no WAF possible here —</text>
+  <text class="t boxsub" x="791" y="405" fill="#f85149">internal ALBs cannot enforce it</text>
+  <text class="t boxsub dim" x="791" y="424">keyed on xff-ip: PSC hides</text>
+  <text class="t boxsub dim" x="791" y="437">the real client address</text>
+
+  <!-- ── GKE ──────────────────────────────────────────────────────── -->
+  <rect class="panel" x="1100" y="272" width="140" height="116" rx="8"/>
+  <text class="t boxname" x="1116" y="294">GKE</text>
+  <text class="t boxsub muted" x="1116" y="313">Autopilot</text>
+  <rect x="1116" y="326" width="48" height="24" rx="4" fill="#21262d" stroke="#bc8cff" stroke-width="1.2"/>
+  <text class="m rule" x="1126" y="342" fill="#bc8cff">pod</text>
+  <rect x="1172" y="326" width="48" height="24" rx="4" fill="#21262d" stroke="#bc8cff" stroke-width="1.2"/>
+  <text class="m rule" x="1182" y="342" fill="#bc8cff">pod</text>
+  <text class="t boxsub dim" x="1116" y="370">ClusterIP only</text>
+  <text class="t boxsub dim" x="1116" y="383">no public address</text>
+
+  <!-- ── Impact bursts ────────────────────────────────────────────── -->
+  <circle class="anim b-edge" cx="380" cy="330" r="16" fill="none" stroke="#f85149" stroke-width="3" opacity="0"/>
+  <circle class="anim b-ilb"  cx="900" cy="330" r="16" fill="none" stroke="#d29922" stroke-width="3" opacity="0"/>
+
+  <!-- ── Packets, drawn last so they sit above the panels ─────────── -->
+  <g class="anim p-ok" opacity="0">
+    <rect x="180" y="320" width="20" height="20" rx="5" fill="#3fb950"/>
+  </g>
+  <g class="anim p-sqli" opacity="0">
+    <rect x="180" y="320" width="20" height="20" rx="5" fill="#f85149"/>
+  </g>
+  <g class="anim p-f1" opacity="0">
+    <rect x="180" y="322" width="16" height="16" rx="4" fill="#d29922"/>
+  </g>
+  <g class="anim p-f2" opacity="0">
+    <rect x="180" y="322" width="16" height="16" rx="4" fill="#d29922"/>
+  </g>
+  <g class="anim p-f3" opacity="0">
+    <rect x="180" y="322" width="16" height="16" rx="4" fill="#d29922"/>
+  </g>
+
+  <!-- ── Status badges ────────────────────────────────────────────── -->
+  <g class="anim s200" opacity="0">
+    <rect x="1128" y="228" width="84" height="28" rx="14" fill="#13341d" stroke="#3fb950" stroke-width="1.5"/>
+    <text class="m badge" x="1146" y="248" fill="#3fb950">200</text>
+  </g>
+  <g class="anim s403" opacity="0">
+    <rect x="338" y="126" width="84" height="28" rx="14" fill="#3a1416" stroke="#f85149" stroke-width="1.5"/>
+    <text class="m badge" x="356" y="146" fill="#f85149">403</text>
+  </g>
+  <g class="anim s429" opacity="0">
+    <rect x="858" y="126" width="84" height="28" rx="14" fill="#3a2d0c" stroke="#d29922" stroke-width="1.5"/>
+    <text class="m badge" x="876" y="146" fill="#d29922">429</text>
+  </g>
+
+  <!-- ── Captions ─────────────────────────────────────────────────── -->
+  <g class="anim c1" opacity="0">
+    <text class="t caption"     x="40" y="536" fill="#3fb950">Legitimate request</text>
+    <text class="t capsub muted" x="40" y="558">Passes every rule, crosses PSC into the producer VPC, reaches a pod.</text>
+  </g>
+  <g class="anim c2" opacity="0">
+    <text class="t caption"     x="40" y="536" fill="#f85149">SQL injection — stopped at the edge</text>
+    <text class="t capsub muted" x="40" y="558">Rule 2000 matches at the Google POP nearest the attacker. The payload never enters a VPC,</text>
+    <text class="t capsub muted" x="40" y="576">never crosses PSC, never reaches the cluster.</text>
+  </g>
+  <g class="anim c3" opacity="0">
+    <text class="t caption"     x="40" y="536" fill="#d29922">Request flood — throttled at the app tier</text>
+    <text class="t capsub muted" x="40" y="558">Allowed through the edge, then rule 3100 caps it at the internal ALB. Defence in depth:</text>
+    <text class="t capsub muted" x="40" y="576">the second policy catches what the first was never meant to.</text>
+  </g>
+
+  <!-- Static legend. Always visible, so the diagram still explains itself
+       in any renderer that ignores the stylesheet above. -->
+  <circle cx="46" cy="598" r="5" fill="#3fb950"/>
+  <text class="t capsub muted" x="58" y="602">allowed</text>
+  <circle cx="146" cy="598" r="5" fill="#f85149"/>
+  <text class="t capsub muted" x="158" y="602">blocked at the edge · WAF, IP, geo</text>
+  <circle cx="390" cy="598" r="5" fill="#d29922"/>
+  <text class="t capsub muted" x="402" y="602">throttled at the app tier · rate limit</text>
+
+  <text class="m tag dim" x="1240" y="602" text-anchor="end">github.com/cjtireus/gcp-cloud-armor-demo</text>
+</svg>

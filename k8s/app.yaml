@@ -1,0 +1,111 @@
+# =========================================================================
+# The workload Cloud Armor is protecting.
+#
+# Three Kubernetes objects, separated by `---` (that is how you put several
+# objects in one YAML file):
+#
+#   Namespace    a folder for grouping resources, so teardown can delete
+#                everything this demo made with a single command
+#   Deployment   declares "run N copies of this container and keep them
+#                running"; it creates and supervises the pods
+#   Service      gives those pods one stable internal address, because
+#                individual pods come and go with changing IPs
+#
+# The __PLACEHOLDERS__ are substituted by 02-app.sh using `sed`, so values
+# come from config.env rather than being duplicated here. This file is not
+# valid to `kubectl apply` directly — run 02-app.sh.
+# =========================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: __NAMESPACE__
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: __APP__
+  namespace: __NAMESPACE__
+spec:
+  # Two copies, so you can see the load balancer distributing requests
+  # between them — the response body names the pod that served it.
+  replicas: 2
+
+  # How the Deployment knows which pods are its own. This must match the
+  # labels in the template below; a mismatch is a classic beginner bug that
+  # produces a Deployment stuck reporting zero ready replicas.
+  selector:
+    matchLabels:
+      app: __APP__
+
+  # The pod blueprint. Change anything in here and the Deployment rolls out
+  # replacement pods.
+  template:
+    metadata:
+      labels:
+        app: __APP__
+    spec:
+      containers:
+        - name: whereami
+          # A stock Google sample app. It answers any request with JSON
+          # describing itself — pod name, zone, cluster — and, with the
+          # variable below set, the request headers it received.
+          #
+          # That echo is the whole reason this image was chosen. With the
+          # WAF switched off you can watch an attack payload arrive at the
+          # pod. The app has no database and nothing to inject into; it is
+          # not vulnerable, it is just honest about what reached it.
+          image: __IMAGE__
+          ports:
+            - containerPort: __PORT__
+          env:
+            - name: ECHO_HEADERS
+              value: "True"
+            - name: METADATA
+              value: "cloud-armor-demo"
+
+          # Autopilot bills on requested CPU and memory, and will apply
+          # defaults if you omit these. Setting them explicitly keeps the
+          # cost predictable and documents what the app actually needs.
+          resources:
+            requests:
+              cpu: 250m          # 250 millicores = 0.25 of a vCPU
+              memory: 256Mi
+
+          # Kubernetes will not send traffic to a pod until its readiness
+          # probe passes. Without this, requests can hit a container that
+          # has started but is not yet listening, producing brief 502s on
+          # every rollout.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: __PORT__
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: __APP__
+  namespace: __NAMESPACE__
+spec:
+  # ClusterIP is the default and the most restrictive type: reachable only
+  # from inside the cluster. Deliberate here. The alternatives would both
+  # undermine the architecture:
+  #
+  #   LoadBalancer  provisions a cloud load balancer with a public IP,
+  #                 giving the internet a way in that bypasses Cloud Armor
+  #   NodePort      opens a port on every node
+  #
+  # The only route to these pods is the internal load balancer the Gateway
+  # creates, which in turn is only reachable over Private Service Connect.
+  type: ClusterIP
+
+  # Which pods receive traffic — matched by label, exactly like the
+  # Deployment's selector above.
+  selector:
+    app: __APP__
+
+  ports:
+    - name: http
+      port: 80            # the port the Service answers on
+      targetPort: __PORT__  # the port the container listens on

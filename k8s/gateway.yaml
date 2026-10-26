@@ -1,0 +1,147 @@
+# =========================================================================
+# The app-tier load balancer, and the two policies attached to it.
+#
+# Four objects:
+#
+#   Gateway              asks GKE to build a load balancer
+#   HTTPRoute            tells that load balancer where to send requests
+#   GCPGatewayPolicy     Google-specific settings for the load balancer
+#                        itself (here: global access)
+#   GCPBackendPolicy     Google-specific settings for the backend service
+#                        (here: Cloud Armor and request logging)
+#
+# The Gateway API is portable across clouds, so anything Google-specific
+# lives in those two extra "policy" objects rather than in the Gateway. That
+# is the pattern: standard object, plus a vendor policy attached to it by
+# `targetRef`.
+#
+# Placeholders are substituted by 02-app.sh. Do not apply this directly.
+# =========================================================================
+kind: Gateway
+apiVersion: gateway.networking.k8s.io/v1
+metadata:
+  name: internal-gateway
+  namespace: __NAMESPACE__
+spec:
+  # The GatewayClass decides what kind of real load balancer gets built.
+  # gke-l7-rilb = Layer 7 (HTTP-aware), Regional, Internal Load Balancer.
+  # Its forwarding rule is what 03-psc-publish.sh publishes over Private
+  # Service Connect, which is why the demo uses an internal class here
+  # rather than an external one.
+  gatewayClassName: gke-l7-rilb
+
+  # A listener is a port the load balancer accepts traffic on. Plain HTTP
+  # on 80 keeps the demo simple; HTTPS would need a certificate and a
+  # domain, and Cloud Armor inspects HTTP exactly the same way.
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      # Only allow HTTPRoutes from this same namespace to attach. The
+      # alternative, `All`, would let any team in the cluster publish
+      # routes through this Gateway.
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# ------------------------------------------------------------------------
+# REQUIRED, and not obvious: global access on the internal load balancer.
+#
+# By default a regional internal load balancer only accepts connections
+# from clients in its own region. A GLOBAL external load balancer consuming
+# this service through Private Service Connect does not satisfy that, so
+# Google Cloud rejects the backend when 04-edge.sh tries to attach it:
+#
+#   Global L7 Private Service Connect consumers require the Private Service
+#   Connect producer load balancer to have AllowGlobalAccess enabled.
+#
+# ORDERING MATTERS. Turning global access on for an EXISTING Gateway makes
+# GKE delete and recreate the underlying forwarding rule — and the service
+# attachment created in step 03 points at that exact rule. So this must be
+# applied together with the Gateway, before the attachment exists. Adding
+# it later means tearing down the PSC NEG and the service attachment,
+# waiting for the new rule to settle (it reports "is not ready" for about a
+# minute), then re-running 03 and 04.
+# ------------------------------------------------------------------------
+kind: GCPGatewayPolicy
+apiVersion: networking.gke.io/v1
+metadata:
+  name: internal-gateway-policy
+  namespace: __NAMESPACE__
+spec:
+  default:
+    allowGlobalAccess: true
+  # `targetRef` is how a policy object says what it applies to. Here, the
+  # Gateway above.
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: internal-gateway
+---
+kind: HTTPRoute
+apiVersion: gateway.networking.k8s.io/v1
+metadata:
+  name: __APP__-route
+  namespace: __NAMESPACE__
+spec:
+  # Which Gateway this route attaches to.
+  parentRefs:
+    - name: internal-gateway
+  # No `matches` block, so this rule matches every request and forwards it
+  # to the Service. A real application would have several rules here
+  # matching on path or hostname.
+  rules:
+    - backendRefs:
+        - name: __APP__
+          port: 80
+---
+# ------------------------------------------------------------------------
+# Cloud Armor and logging for the backend service GKE created.
+#
+# READ THIS BEFORE ADDING RULES TO THE POLICY NAMED BELOW.
+#
+# The policy referenced here may contain ONLY rules that a regional
+# INTERNAL Application Load Balancer can enforce: allow, deny, throttle and
+# rate-based ban, matched on client IP or JA3 fingerprint.
+#
+# WAF rules, managed rules, body filtering, geography and ASN are NOT
+# supported at this tier. The trap is that nothing tells you so. The
+# manifest applies, `kubectl describe` reports `Attached: True`, and the
+# rules simply never fire. You end up believing you have a WAF in front of
+# your application when you do not.
+#
+# Cloud Armor's capability matrix is per load balancer type, not per
+# policy. The SQLi and XSS rules therefore live in the edge policy, on the
+# global external load balancer, where they are genuinely enforced.
+# armor.sh refuses to add unsupported rule types here rather than letting
+# you configure a silent gap.
+#
+# One more thing: this manifest is the SINGLE SOURCE OF TRUTH for the
+# attachment. Do not also run `gcloud compute backend-services update
+# --security-policy` against this backend service — the Gateway controller
+# reconciles continuously and will overwrite whatever you set by hand.
+# (The edge load balancer is the opposite case: it is built directly with
+# gcloud, so there is no controller to fight, and armor.sh attaches its
+# policy with gcloud.)
+# ------------------------------------------------------------------------
+kind: GCPBackendPolicy
+apiVersion: networking.gke.io/v1
+metadata:
+  name: __APP__-armor
+  namespace: __NAMESPACE__
+spec:
+  default:
+    # Must already exist — ./armor.sh create runs before ./02-app.sh.
+    securityPolicy: __APP_POLICY__
+
+    # Cloud Armor's decisions are recorded as part of the load balancer's
+    # request logs, so logging has to be on or ./logs.sh shows nothing.
+    logging:
+      enabled: true
+      # Expressed in millionths: 1000000 = 100% of requests. Lower it in
+      # production, where full-rate logging on a busy service gets costly.
+      sampleRate: 1000000
+  targetRef:
+    group: ""        # "" means the core Kubernetes API group
+    kind: Service
+    name: __APP__
